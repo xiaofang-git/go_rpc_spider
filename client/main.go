@@ -4,33 +4,35 @@ import (
 	"net/rpc"
 	"sync"
 	"time"
+	"github.com/gohouse/gorose"
+	_ "github.com/go-sql-driver/mysql"
+	"spider/public"
+
 )
 
 var wg sync.WaitGroup
 
 var work_list = [...]string{
 	"127.0.0.1:1234",
-	"218.60.41.2:1234",
+	// "218.60.41.200:1234",
+	// "218.60.41.200:1234",
 }
 
 func id_db() int {
 	// 从数据库获取最大id
-	return 30386
+	return 30389
 }
 
 func id_api() int {
-	// 通过api获取最大id
+	通过api获取最大id
+	conn, _ := gorose.Open(public.DbConfig)
+	key,_ := conn.Table("mirror").Max("mirror_key")
+	fmt.Println(key)
 	return 30389
 }
 
 
-type Content struct {
-	Tid int
-	Context string
-	Status_code int
-}
-
-var ch = make(chan Content, 10)
+var ch = make(chan public.Content, 10)
 
 func task(ip string, tid int)  {
 	// 获取结果
@@ -38,7 +40,7 @@ func task(ip string, tid int)  {
 	if err != nil {
 		fmt.Println("链接rpc服务器失败:", err)
 		}
-		result := new(Content)
+		result := new(public.Content)
 
 		err = client.Call("Content.Get", tid, &result)
 
@@ -46,7 +48,6 @@ func task(ip string, tid int)  {
 			fmt.Println("调用远程服务失败", err)
 
 			}
-		fmt.Println("远程服务返回结果：", *result)
 
 		select {
 			case ch <- *result:
@@ -74,10 +75,18 @@ func worker()  {
 func insert() {
 	start := id_db()
 	end := id_api()
-	for i:=start; i<end; i++ {
+	conn, _ := gorose.Open(public.DbConfig)
+	for i:=start; i<=end; i++ {
 		mirror := <- ch
-		fmt.Println(mirror)
+		_, err := conn.Table("mirror").Data(map[string]interface{}{
+			"mirror_key": mirror.Tid,
+			"mirror_status": mirror.Status_code,
+			"mirror_url": mirror.Url,
+			}).Insert()
+		fmt.Println(err)
 	}
+
+	conn.Close()
 	wg.Done()
 }
 
